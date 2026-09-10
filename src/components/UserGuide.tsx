@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Server,
   StopCircle,
+  KeyRound,
 } from "lucide-react";
 
 interface UserGuideProps {
@@ -246,6 +247,51 @@ export function UserGuide({ onStartTest }: UserGuideProps) {
             <div>
               <strong className="text-white">Instant Stop Guarantee:</strong> Clicking <strong className="text-rose-400">STOP TEST</strong> immediately flips the state in Redis and cancels pending messages in QStash. Subsequent ticks are rejected before firing any HTTP requests.
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CSRF Tokens vs API Routes Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-4">
+        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <KeyRound className="w-5 h-5 text-emerald-400" />
+          Handling CSRF Tokens vs. Testing API Routes
+        </h3>
+
+        <div className="space-y-4 text-xs sm:text-sm text-slate-300">
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <h4 className="font-bold text-white text-sm flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              1. Why Web Forms Return "HTTP 419 Page Expired"
+            </h4>
+            <p className="text-slate-400 leading-relaxed text-xs">
+              Backend frameworks like <strong>Laravel, Django, and Ruby on Rails</strong> include CSRF (Cross-Site Request Forgery) protection on all web routes (e.g. <code>routes/web.php</code>). If you send automated POST requests without a valid CSRF token and corresponding session cookie, the server rejects them immediately with <strong>HTTP 419</strong> before your login rate limiter even executes.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <h4 className="font-bold text-white text-sm flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              2. Solution A: Enable "Auto-fetch CSRF Token & Session Cookie"
+            </h4>
+            <p className="text-slate-400 leading-relaxed text-xs">
+              Check the <strong className="text-emerald-300">Auto-fetch CSRF</strong> box (or click the <em>"Laravel Web Login (+CSRF)"</em> preset). Before firing each batch, the engine performs a GET request to the login page, extracts the CSRF token (from <code>_token</code> or meta tags) along with the active session cookies (e.g. <code>laravel_session</code>, <code>XSRF-TOKEN</code>), and attaches them to every POST request in the batch.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <h4 className="font-bold text-white text-sm flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-400" />
+              3. Solution B: Test an API Route Instead (Recommended)
+            </h4>
+            <p className="text-slate-400 leading-relaxed text-xs">
+              If your backend has an API login endpoint (defined in <code>routes/api.php</code> such as <code>/api/login</code> or <code>/api/v1/auth</code>):
+            </p>
+            <ul className="list-disc list-inside text-slate-400 text-xs space-y-1 pl-2">
+              <li>API routes normally do <strong>not</strong> use the <code>web</code> session middleware group and require no CSRF token.</li>
+              <li>Requests hit your rate limiter directly (e.g. <code>throttle:api</code> or <code>throttle:login</code>).</li>
+              <li>Test with method <code className="text-indigo-300">POST</code>, header <code className="text-indigo-300">Content-Type: application/json</code>, and a JSON body.</li>
+            </ul>
           </div>
         </div>
       </div>

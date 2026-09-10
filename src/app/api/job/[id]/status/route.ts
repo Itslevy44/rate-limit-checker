@@ -51,6 +51,7 @@ export async function GET(
     avgLatency,
     minLatency,
     maxLatency,
+    autoCsrf: job.target.autoCsrf,
   };
 
   return NextResponse.json(safeStatus);

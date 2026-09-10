@@ -216,11 +216,16 @@ export function StatusDashboard({ jobId, onReset, sharedSecret }: StatusDashboar
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-slate-400 mt-2 font-mono break-all">
+            <div className="flex items-center gap-2 text-xs text-slate-400 mt-2 font-mono break-all flex-wrap">
               <span className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-bold">
                 {job.targetMethod}
               </span>
               <span>{job.targetUrl}</span>
+              {job.autoCsrf && (
+                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-sans font-semibold">
+                  Auto-CSRF Active
+                </span>
+              )}
             </div>
           </div>
 

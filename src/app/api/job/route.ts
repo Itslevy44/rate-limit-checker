@@ -133,6 +133,8 @@ export async function POST(req: NextRequest) {
       method,
       headers,
       body: requestBody,
+      autoCsrf: Boolean(body.autoCsrf),
+      csrfUrl: body.csrfUrl ? String(body.csrfUrl).trim() : undefined,
     },
     batchSize,
     delayMs,

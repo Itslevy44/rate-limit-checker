@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, ShieldAlert, Sparkles, Play, Code, Clock, Zap, BookOpen } from "lucide-react";
+import { Plus, Trash2, ShieldAlert, Sparkles, Play, Code, Clock, Zap, BookOpen, Info, Shield, KeyRound } from "lucide-react";
 import { GUARDRAILS } from "@/lib/types";
 
 interface HeaderItem {
@@ -26,12 +26,14 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
   const [delayMs, setDelayMs] = useState<number>(1000);
   const [maxRequests, setMaxRequests] = useState<number>(100);
   const [maxDurationMinutes, setMaxDurationMinutes] = useState<number>(5);
+  const [autoCsrf, setAutoCsrf] = useState<boolean>(false);
+  const [csrfUrl, setCsrfUrl] = useState<string>("");
 
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Preset loader
-  const loadPreset = (type: "mock" | "login" | "get") => {
+  const loadPreset = (type: "mock" | "login" | "laravel" | "get") => {
     setFormError(null);
     if (type === "mock") {
       const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
@@ -43,12 +45,29 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
       setDelayMs(500);
       setMaxRequests(60);
       setMaxDurationMinutes(3);
+      setAutoCsrf(false);
+      setCsrfUrl("");
+    } else if (type === "laravel") {
+      setUrl("https://goafrica.site/dashboard/login");
+      setMethod("POST");
+      setHeaders([
+        { id: "h-1", key: "Content-Type", value: "application/x-www-form-urlencoded" },
+        { id: "h-2", key: "User-Agent", value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+      ]);
+      setBody("email=admin%40example.com&password=wrong_password_test");
+      setBatchSize(5);
+      setDelayMs(1000);
+      setMaxRequests(50);
+      setMaxDurationMinutes(5);
+      setAutoCsrf(true);
+      setCsrfUrl("");
     } else if (type === "login") {
       setUrl("https://api.example.com/v1/auth/login");
       setMethod("POST");
       setHeaders([
         { id: "h-1", key: "Content-Type", value: "application/json" },
-        { id: "h-2", key: "User-Agent", value: "RateLimitTester/1.0" },
+        { id: "h-2", key: "Accept", value: "application/json" },
+        { id: "h-3", key: "User-Agent", value: "RateLimitTester/1.0" },
       ]);
       setBody(
         JSON.stringify(
@@ -64,6 +83,8 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
       setDelayMs(1000);
       setMaxRequests(50);
       setMaxDurationMinutes(5);
+      setAutoCsrf(false);
+      setCsrfUrl("");
     } else {
       setUrl("https://httpbin.org/get");
       setMethod("GET");
@@ -73,6 +94,8 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
       setDelayMs(1000);
       setMaxRequests(20);
       setMaxDurationMinutes(2);
+      setAutoCsrf(false);
+      setCsrfUrl("");
     }
   };
 
@@ -162,6 +185,8 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
           delayMs: Number(delayMs),
           maxRequests: Number(maxRequests),
           maxDurationMinutes: Number(maxDurationMinutes),
+          autoCsrf,
+          csrfUrl: csrfUrl.trim() || undefined,
         }),
       });
 
@@ -203,10 +228,17 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
           </button>
           <button
             type="button"
+            onClick={() => loadPreset("laravel")}
+            className="px-2.5 py-1 text-xs font-medium rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 hover:bg-emerald-900 transition flex items-center gap-1"
+          >
+            <KeyRound className="w-3 h-3" /> Laravel Web Login (+CSRF)
+          </button>
+          <button
+            type="button"
             onClick={() => loadPreset("login")}
             className="px-2.5 py-1 text-xs font-medium rounded-md bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition"
           >
-            Dummy Login POST
+            API JSON POST
           </button>
           {onOpenGuide && (
             <button
@@ -339,6 +371,51 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
             />
           </div>
         )}
+
+        {/* CSRF & Session Pre-fetch (For Laravel / Django / Rails web forms) */}
+        <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="autoCsrf"
+              checked={autoCsrf}
+              onChange={(e) => setAutoCsrf(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+            />
+            <label htmlFor="autoCsrf" className="cursor-pointer">
+              <span className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
+                Auto-fetch CSRF Token & Session Cookie (for Laravel / Web Forms)
+              </span>
+              <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                Pre-fetches the page before each batch to capture <code>_token</code> and session cookies, injecting them into requests to bypass HTTP 419 Page Expired errors.
+              </span>
+            </label>
+          </div>
+
+          {autoCsrf && (
+            <div className="pt-2 pl-7 space-y-2 border-t border-slate-800/80">
+              <label className="block text-[11px] font-semibold text-slate-400">
+                Custom CSRF Source URL (optional, defaults to Target URL)
+              </label>
+              <input
+                type="text"
+                placeholder="https://example.com/login (defaults to target URL)"
+                value={csrfUrl}
+                onChange={(e) => setCsrfUrl(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* API Route vs Web Form Tip */}
+        <div className="p-3.5 bg-indigo-950/40 border border-indigo-800/40 rounded-xl text-xs text-slate-300 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            <strong className="text-indigo-200 font-semibold">Testing API Routes vs Web Forms:</strong> If your backend has an API endpoint (e.g. in <code>routes/api.php</code> such as <code>/api/login</code>), testing the API route is cleaner because API routes do not require CSRF tokens and hit your rate limiter (<code>throttle:api</code>) directly!
+          </div>
+        </div>
 
         {/* Pacing & Batch Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">

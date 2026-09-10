@@ -3,6 +3,8 @@ export type JobTarget = {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  autoCsrf?: boolean;
+  csrfUrl?: string;
 };
 
 export type JobStatus = "running" | "stopped" | "completed" | "failed";
@@ -48,6 +50,7 @@ export type JobSafeStatus = {
   avgLatency: number | null;
   minLatency: number | null;
   maxLatency: number | null;
+  autoCsrf?: boolean;
 };
 
 export type CreateJobPayload = {
@@ -59,6 +62,8 @@ export type CreateJobPayload = {
   delayMs?: number;
   maxRequests: number;
   maxDurationMinutes: number;
+  autoCsrf?: boolean;
+  csrfUrl?: string;
 };
 
 // Hard ceilings and guardrails
