@@ -88,6 +88,11 @@ export async function POST(
     const item = batchResult.items[i];
     job.statusCounts[item.status] = (job.statusCounts[item.status] || 0) + 1;
 
+    // Save one body snippet per distinct status code for dashboard diagnosis
+    if (item.bodySnippet && !job.responseSamples[item.status]) {
+      job.responseSamples[item.status] = item.bodySnippet;
+    }
+
     // Track first 429 occurrence index
     if (item.statusCode === 429 && job.first429At === null) {
       job.first429At = previousSent + i + 1;

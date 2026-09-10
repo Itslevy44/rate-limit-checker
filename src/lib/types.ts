@@ -30,6 +30,7 @@ export type Job = {
   latencies: number[]; // Capped at last ~200 entries
   lastTickAt: number;
   qstashScheduleId: string; // Message ID from QStash
+  responseSamples: Record<string, string>; // One body snippet per distinct status code
   error?: string;
 };
 
@@ -55,6 +56,7 @@ export type JobSafeStatus = {
   autoCsrf?: boolean;
   followRedirects?: boolean;
   expectJson?: boolean;
+  responseSamples?: Record<string, string>; // One body snippet per distinct status code
 };
 
 export type CreateJobPayload = {

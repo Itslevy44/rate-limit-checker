@@ -54,6 +54,7 @@ export async function GET(
     autoCsrf: job.target.autoCsrf,
     followRedirects: job.target.followRedirects,
     expectJson: job.target.expectJson,
+    responseSamples: job.responseSamples || {},
   };
 
   return NextResponse.json(safeStatus);

@@ -6,6 +6,7 @@ export type BatchResultItem = {
   latencyMs: number;
   isRateLimited?: boolean;
   error?: string;
+  bodySnippet?: string; // first ~300 chars of response body for diagnosis
 };
 
 export type BatchExecutionResult = {
@@ -135,6 +136,19 @@ async function executeSingleRequest(
 
     const latencyMs = Math.round(performance.now() - start);
 
+    // Shared throttle keyword patterns — used for body scanning on any status code
+    const THROTTLE_PATTERNS = [
+      /too many (login )?attempts/i,
+      /please try again in \d+/i,
+      /rate limit exceeded/i,
+      /too many requests/i,
+      /throttled?/i,
+      /temporarily locked/i,
+      /account locked/i,
+      /slow down/i,
+      /you have been blocked/i,
+    ];
+
     // Option 3: Check rate-limit headers on the response (even if status is 302 or 200)
     const retryAfter = response.headers.get("retry-after");
     const remaining =
@@ -175,18 +189,8 @@ async function executeSingleRequest(
           });
 
           const followHtml = await followRes.text();
-          const throttlePatterns = [
-            /too many (login )?attempts/i,
-            /please try again in \d+/i,
-            /rate limit exceeded/i,
-            /too many requests/i,
-            /throttle/i,
-            /temporarily locked/i,
-            /account locked/i,
-            /slow down/i,
-          ];
 
-          if (throttlePatterns.some((p) => p.test(followHtml))) {
+          if (THROTTLE_PATTERNS.some((p) => p.test(followHtml))) {
             return {
               status: "429",
               statusCode: 429,
@@ -201,10 +205,41 @@ async function executeSingleRequest(
       }
     }
 
+    // Read response body for ALL non-redirect responses to:
+    // (a) Scan for throttle keywords buried in 422/400/200 bodies
+    // (b) Capture a snippet for user diagnosis in the dashboard
+    let bodySnippet: string | undefined;
+    let isBodyThrottled = false;
+
+    // Only read body for non-redirect statuses where we expect a body
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      try {
+        const rawBody = await response.text();
+        bodySnippet = rawBody.slice(0, 300).trim() || undefined;
+        if (bodySnippet && THROTTLE_PATTERNS.some((p) => p.test(rawBody))) {
+          isBodyThrottled = true;
+        }
+      } catch {
+        // non-fatal: body read failure, proceed without snippet
+      }
+    }
+
+    if (isBodyThrottled) {
+      return {
+        status: "429",
+        statusCode: 429,
+        latencyMs,
+        isRateLimited: true,
+        bodySnippet,
+        error: `Throttled (keyword found in ${response.status} body — cache/IP issue suspected)`,
+      };
+    }
+
     return {
       status: String(response.status),
       statusCode: response.status,
       latencyMs,
+      bodySnippet,
     };
   } catch (err: any) {
     const latencyMs = Math.round(performance.now() - start);

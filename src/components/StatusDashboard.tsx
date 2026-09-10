@@ -473,6 +473,101 @@ export function StatusDashboard({ jobId, onReset, sharedSecret }: StatusDashboar
           </div>
         )}
       </div>
+
+      {/* Response Body Diagnosis Panel */}
+      {job.responseSamples && Object.keys(job.responseSamples).length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
+          <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            Response Body Diagnosis
+          </h3>
+          <p className="text-xs text-slate-400 mb-4">
+            One captured response body per distinct status code. Use this to confirm whether your
+            server is returning <em>credential errors</em> vs <em>throttle errors</em> — they can
+            share the same status code.
+          </p>
+
+          {/* Hidden-throttle callout: 422 or 400 body contains throttle language */}
+          {Object.entries(job.responseSamples).some(([code, body]) => {
+            if (code === "429") return false;
+            return /too many (login )?attempts|rate limit exceeded|throttled?|slow down|temporarily locked|you have been blocked/i.test(body);
+          }) && (
+            <div className="mb-4 p-3.5 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-bold text-amber-300">Hidden Throttle Detected!</strong>{" "}
+                A non-429 response body contains throttle language. Your server is rate-limiting
+                requests but returning the wrong HTTP status code. Common causes: custom exception
+                handler overriding the 429, or a{" "}
+                <code className="bg-amber-950 px-1 rounded">CACHE_DRIVER=array</code> keeping
+                counters in memory only (reset between invocations).
+              </div>
+            </div>
+          )}
+
+          {/* No throttle at all — possible IP rotation explanation */}
+          {job.status !== "running" && job.first429At === null && job.sent >= 10 && (
+            <div className="mb-4 p-3.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-300 text-xs flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold text-slate-200">No rate-limiting detected.</strong>{" "}
+                If you expected throttling but didn&apos;t see it, check two things:{" "}
+                <strong>①</strong> <code>CACHE_DRIVER</code> in your server&apos;s{" "}
+                <code>.env</code> — if it&apos;s <code>array</code>, attempt counts reset per
+                request and never accumulate.{" "}
+                <strong>②</strong> Vercel serverless functions use rotating outbound IPs —
+                Laravel&apos;s <code>ThrottlesLogins</code> keys by <code>email + IP</code>, so
+                each tick may look like a different visitor.
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {Object.entries(job.responseSamples).map(([code, snippet]) => {
+              const isThrottleInBody = /too many (login )?attempts|rate limit exceeded|throttled?|slow down|temporarily locked|you have been blocked/i.test(snippet);
+              const is422or400 = code === "422" || code === "400";
+              const borderColor =
+                code === "429"
+                  ? "border-amber-800"
+                  : isThrottleInBody
+                  ? "border-amber-700"
+                  : is422or400
+                  ? "border-slate-700"
+                  : "border-slate-800";
+              const labelColor =
+                code === "429"
+                  ? "text-amber-300"
+                  : isThrottleInBody
+                  ? "text-amber-200"
+                  : "text-slate-300";
+
+              return (
+                <div key={code} className={`rounded-lg border ${borderColor} overflow-hidden`}>
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-950/60">
+                    <span className={`text-xs font-bold font-mono ${labelColor}`}>
+                      HTTP {code}
+                      {isThrottleInBody && code !== "429" && (
+                        <span className="ml-2 text-[10px] bg-amber-900/60 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded font-sans">
+                          ⚠ throttle keyword found
+                        </span>
+                      )}
+                      {code === "422" && !isThrottleInBody && (
+                        <span className="ml-2 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-sans">
+                          normal login failure
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-slate-500">sample body (first 300 chars)</span>
+                  </div>
+                  <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 px-3 py-2.5 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-36">
+                    {snippet || "(empty body)"}
+                  </pre>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

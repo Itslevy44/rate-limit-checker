@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
     latencies: [],
     lastTickAt: Date.now(),
     qstashScheduleId: "",
+    responseSamples: {},
   };
 
   // Schedule first tick
