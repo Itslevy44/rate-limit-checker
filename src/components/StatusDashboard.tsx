@@ -441,12 +441,39 @@ export function StatusDashboard({ jobId, onReset, sharedSecret }: StatusDashboar
                   let badgeColor = "bg-slate-800 text-slate-300";
                   let desc = "HTTP Response";
 
+                  // Check if we have a body sample that reveals Cloudflare
+                  const bodySample = job.responseSamples?.[status] || "";
+                  const isCfStatus = /just a moment|cloudflare|cf-ray|Enable JavaScript and cookies|checking your browser|ray id/i.test(bodySample);
+
                   if (status === "200") {
                     badgeColor = "bg-emerald-950 text-emerald-300 border border-emerald-800";
                     desc = "OK (Successful)";
+                  } else if (status === "302" || status === "301") {
+                    badgeColor = "bg-sky-950 text-sky-300 border border-sky-800";
+                    desc = "Redirect — use 'Follow Redirects' or 'Send AJAX Headers' to detect throttle";
+                  } else if (status === "401") {
+                    badgeColor = "bg-slate-800 text-slate-300 border border-slate-700";
+                    desc = "Unauthorized — missing or invalid auth credentials";
+                  } else if (status === "403") {
+                    if (isCfStatus) {
+                      badgeColor = "bg-orange-950 text-orange-300 border border-orange-800";
+                      desc = "🛡 Cloudflare Bot Protection (WAF block — not your app)";
+                    } else {
+                      badgeColor = "bg-slate-800 text-slate-300 border border-slate-700";
+                      desc = "Forbidden — WAF, firewall rule, or permission denied";
+                    }
+                  } else if (status === "419") {
+                    badgeColor = "bg-purple-950 text-purple-300 border border-purple-800";
+                    desc = "Page Expired — missing CSRF token; enable Auto-CSRF";
+                  } else if (status === "422") {
+                    badgeColor = "bg-slate-800 text-slate-300 border border-slate-700";
+                    desc = "Unprocessable — validation failure (wrong credentials, not throttled)";
                   } else if (status === "429") {
                     badgeColor = "bg-amber-950 text-amber-300 border border-amber-800";
-                    desc = "Too Many Requests (Rate Limited)";
+                    desc = "Too Many Requests (Rate Limited) ✓";
+                  } else if (status === "503") {
+                    badgeColor = "bg-rose-950 text-rose-300 border border-rose-800";
+                    desc = isCfStatus ? "🛡 Cloudflare overloaded / maintenance mode" : "Service Unavailable";
                   } else if (status.startsWith("5")) {
                     badgeColor = "bg-rose-950 text-rose-300 border border-rose-800";
                     desc = "Server Error";
@@ -475,99 +502,178 @@ export function StatusDashboard({ jobId, onReset, sharedSecret }: StatusDashboar
       </div>
 
       {/* Response Body Diagnosis Panel */}
-      {job.responseSamples && Object.keys(job.responseSamples).length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
-          <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            Response Body Diagnosis
-          </h3>
-          <p className="text-xs text-slate-400 mb-4">
-            One captured response body per distinct status code. Use this to confirm whether your
-            server is returning <em>credential errors</em> vs <em>throttle errors</em> — they can
-            share the same status code.
-          </p>
+      {job.responseSamples && Object.keys(job.responseSamples).length > 0 && (() => {
+        const allSamples = Object.entries(job.responseSamples);
 
-          {/* Hidden-throttle callout: 422 or 400 body contains throttle language */}
-          {Object.entries(job.responseSamples).some(([code, body]) => {
-            if (code === "429") return false;
-            return /too many (login )?attempts|rate limit exceeded|throttled?|slow down|temporarily locked|you have been blocked/i.test(body);
-          }) && (
-            <div className="mb-4 p-3.5 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-xs flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <strong className="font-bold text-amber-300">Hidden Throttle Detected!</strong>{" "}
-                A non-429 response body contains throttle language. Your server is rate-limiting
-                requests but returning the wrong HTTP status code. Common causes: custom exception
-                handler overriding the 429, or a{" "}
-                <code className="bg-amber-950 px-1 rounded">CACHE_DRIVER=array</code> keeping
-                counters in memory only (reset between invocations).
+        // Cloudflare detection — "Just a moment..." challenge or cf-specific markers
+        const isCloudflareBodies = allSamples.some(([, body]) =>
+          /just a moment|cloudflare|cf-ray|Enable JavaScript and cookies|checking your browser|ray id/i.test(body)
+        );
+
+        // Hidden throttle in non-429 bodies
+        const hasHiddenThrottle = allSamples.some(([code, body]) => {
+          if (code === "429") return false;
+          return /too many (login )?attempts|rate limit exceeded|throttled?|slow down|temporarily locked|you have been blocked/i.test(body);
+        });
+
+        const isCompleted = job.status !== "running";
+        const noThrottleAtAll = isCompleted && job.first429At === null && job.sent >= 10;
+
+        return (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
+            <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              Response Body Diagnosis
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              One captured response body per distinct status code — confirms whether your server is
+              returning <em>credential errors</em>, <em>throttle errors</em>, or a{" "}
+              <em>WAF/proxy block</em> before requests even reach your app.
+            </p>
+
+            {/* ① Cloudflare WAF / Bot Protection Banner */}
+            {isCloudflareBodies && (
+              <div className="mb-4 p-4 rounded-lg bg-orange-950/60 border border-orange-700 text-orange-100 text-xs space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-bold text-orange-300 text-sm">
+                      🛡 Cloudflare is Intercepting All Requests
+                    </strong>
+                    <p className="mt-1 leading-relaxed text-orange-200">
+                      Every response contains Cloudflare&apos;s{" "}
+                      <em>&quot;Just a moment...&quot;</em> challenge page. Your requests are being
+                      blocked by the CDN/WAF <strong>before</strong> they reach your app server —
+                      you are measuring Cloudflare bot detection, not your app&apos;s rate limiter.
+                    </p>
+                  </div>
+                </div>
+                <div className="pl-6 space-y-1.5 text-orange-200 leading-relaxed">
+                  <p className="font-semibold text-orange-300">Options to get past it:</p>
+                  <p>
+                    <strong>① If you own this site</strong> — In Cloudflare Dashboard → Security →
+                    WAF, create a Firewall Rule to <em>bypass / allow</em> requests coming from
+                    Vercel&apos;s IP range, or temporarily set Security Level to{" "}
+                    <code className="bg-orange-950 px-1 rounded">Essentially Off</code> for testing.
+                  </p>
+                  <p>
+                    <strong>② Hit the origin server directly</strong> — Find your hosting IP (e.g.
+                    in Cloudflare DNS), then set a custom header{" "}
+                    <code className="bg-orange-950 px-1 rounded">Host: bizpoa.com</code> and target
+                    the raw IP. This bypasses Cloudflare entirely.
+                  </p>
+                  <p>
+                    <strong>③ Add browser-like headers</strong> — Try adding a realistic{" "}
+                    <code className="bg-orange-950 px-1 rounded">User-Agent</code> (e.g.
+                    Chrome 124) and{" "}
+                    <code className="bg-orange-950 px-1 rounded">Accept-Language: en-US,en;q=0.9</code>{" "}
+                    headers. May reduce bot scoring enough to reach your app for light Cloudflare
+                    configs, but won&apos;t work against IUAM (&quot;Under Attack&quot; mode).
+                  </p>
+                  <p>
+                    <strong>④ Test a Cloudflare-excluded path</strong> — If any route is excluded
+                    from CF protection (e.g. an <code className="bg-orange-950 px-1 rounded">/api/</code>{" "}
+                    path set to &quot;Bypass&quot; in your Page Rules), target that instead.
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* No throttle at all — possible IP rotation explanation */}
-          {job.status !== "running" && job.first429At === null && job.sent >= 10 && (
-            <div className="mb-4 p-3.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-300 text-xs flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-              <div>
-                <strong className="font-semibold text-slate-200">No rate-limiting detected.</strong>{" "}
-                If you expected throttling but didn&apos;t see it, check two things:{" "}
-                <strong>①</strong> <code>CACHE_DRIVER</code> in your server&apos;s{" "}
-                <code>.env</code> — if it&apos;s <code>array</code>, attempt counts reset per
-                request and never accumulate.{" "}
-                <strong>②</strong> Vercel serverless functions use rotating outbound IPs —
-                Laravel&apos;s <code>ThrottlesLogins</code> keys by <code>email + IP</code>, so
-                each tick may look like a different visitor.
+            {/* ② Hidden throttle in wrong status code */}
+            {!isCloudflareBodies && hasHiddenThrottle && (
+              <div className="mb-4 p-3.5 rounded-lg bg-amber-950/60 border border-amber-700 text-amber-200 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-bold text-amber-300">Hidden Throttle Detected!</strong>{" "}
+                  A non-429 response body contains throttle language. Your server is rate-limiting
+                  but returning the wrong HTTP status code. Common causes: custom exception handler
+                  overriding the 429, or{" "}
+                  <code className="bg-amber-950 px-1 rounded">CACHE_DRIVER=array</code> resetting
+                  counters per request.
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="space-y-3">
-            {Object.entries(job.responseSamples).map(([code, snippet]) => {
-              const isThrottleInBody = /too many (login )?attempts|rate limit exceeded|throttled?|slow down|temporarily locked|you have been blocked/i.test(snippet);
-              const is422or400 = code === "422" || code === "400";
-              const borderColor =
-                code === "429"
+            {/* ③ No throttle, no Cloudflare — show IP rotation / cache driver advice */}
+            {!isCloudflareBodies && noThrottleAtAll && (
+              <div className="mb-4 p-3.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-300 text-xs flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-semibold text-slate-200">No rate-limiting detected.</strong>{" "}
+                  If you expected throttling, check:{" "}
+                  <strong>①</strong> <code>CACHE_DRIVER</code> in your server&apos;s{" "}
+                  <code>.env</code> — <code>array</code> means counters reset each request and never
+                  accumulate.{" "}
+                  <strong>②</strong> Vercel serverless functions rotate outbound IPs — Laravel&apos;s{" "}
+                  <code>ThrottlesLogins</code> keys by <code>email + IP</code>, so each batch tick
+                  may appear as a different visitor.
+                </div>
+              </div>
+            )}
+
+            {/* Body snippets per status code */}
+            <div className="space-y-3">
+              {allSamples.map(([code, snippet]) => {
+                const isThrottleInBody = /too many (login )?attempts|rate limit exceeded|throttled?|slow down|temporarily locked|you have been blocked/i.test(snippet);
+                const isCfBody = /just a moment|cloudflare|cf-ray|Enable JavaScript and cookies|checking your browser|ray id/i.test(snippet);
+                const is422or400 = code === "422" || code === "400";
+
+                const borderColor = isCfBody
+                  ? "border-orange-800"
+                  : code === "429"
                   ? "border-amber-800"
                   : isThrottleInBody
                   ? "border-amber-700"
                   : is422or400
                   ? "border-slate-700"
                   : "border-slate-800";
-              const labelColor =
-                code === "429"
+
+                const labelColor = isCfBody
+                  ? "text-orange-300"
+                  : code === "429"
                   ? "text-amber-300"
                   : isThrottleInBody
                   ? "text-amber-200"
                   : "text-slate-300";
 
-              return (
-                <div key={code} className={`rounded-lg border ${borderColor} overflow-hidden`}>
-                  <div className="flex items-center justify-between px-3 py-2 bg-slate-950/60">
-                    <span className={`text-xs font-bold font-mono ${labelColor}`}>
-                      HTTP {code}
-                      {isThrottleInBody && code !== "429" && (
-                        <span className="ml-2 text-[10px] bg-amber-900/60 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded font-sans">
-                          ⚠ throttle keyword found
-                        </span>
-                      )}
-                      {code === "422" && !isThrottleInBody && (
-                        <span className="ml-2 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-sans">
-                          normal login failure
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-slate-500">sample body (first 300 chars)</span>
+                return (
+                  <div key={code} className={`rounded-lg border ${borderColor} overflow-hidden`}>
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-950/60">
+                      <span className={`text-xs font-bold font-mono ${labelColor}`}>
+                        HTTP {code}
+                        {isCfBody && (
+                          <span className="ml-2 text-[10px] bg-orange-950/80 text-orange-300 border border-orange-800 px-1.5 py-0.5 rounded font-sans">
+                            🛡 Cloudflare challenge
+                          </span>
+                        )}
+                        {!isCfBody && isThrottleInBody && code !== "429" && (
+                          <span className="ml-2 text-[10px] bg-amber-900/60 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded font-sans">
+                            ⚠ throttle keyword found
+                          </span>
+                        )}
+                        {code === "422" && !isThrottleInBody && !isCfBody && (
+                          <span className="ml-2 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-sans">
+                            normal login failure
+                          </span>
+                        )}
+                        {code === "403" && !isCfBody && (
+                          <span className="ml-2 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-sans">
+                            forbidden (WAF / auth rule)
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-slate-500">sample body (first 300 chars)</span>
+                    </div>
+                    <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 px-3 py-2.5 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-36">
+                      {snippet || "(empty body)"}
+                    </pre>
                   </div>
-                  <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 px-3 py-2.5 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-36">
-                    {snippet || "(empty body)"}
-                  </pre>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
