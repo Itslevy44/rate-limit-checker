@@ -8,7 +8,11 @@ function getQStashClient(): Client | null {
   if (!token || token.includes("ey...") || token === "your-qstash-token") {
     return null;
   }
-  return new Client({ token });
+  const baseUrl = process.env.QSTASH_URL?.trim();
+  return new Client({
+    token,
+    ...(baseUrl ? { baseUrl } : {}),
+  });
 }
 
 function getQStashReceiver(): Receiver | null {
