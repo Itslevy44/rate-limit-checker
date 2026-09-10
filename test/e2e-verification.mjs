@@ -51,16 +51,16 @@ async function runTests() {
   assert.equal(g2.status, 400);
   console.log("   ✓ Missing maxRequests correctly rejected (400)");
 
-  // maxRequests exceeding 50,000 ceiling
+  // maxRequests exceeding 1,000,000 ceiling
   const g3 = await fetch(`${BASE_URL}/api/job`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: "https://example.com", maxRequests: 99999, maxDurationMinutes: 5 }),
+    body: JSON.stringify({ url: "https://example.com", maxRequests: 2000000, maxDurationMinutes: 5 }),
   });
   assert.equal(g3.status, 400);
   const d_g3 = await g3.json();
   assert.match(d_g3.error, /exceeds maximum ceiling/i);
-  console.log("   ✓ maxRequests > 50,000 ceiling correctly rejected (400)");
+  console.log("   ✓ maxRequests > 1,000,000 ceiling correctly rejected (400)");
 
   // maxDurationMinutes exceeding 120 ceiling
   const g4 = await fetch(`${BASE_URL}/api/job`, {

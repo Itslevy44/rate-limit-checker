@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 describe("Rate Limit Tester — Guardrails and Execution Suite", () => {
   test("Guardrails: Ceiling constants are within strict safe boundaries", async () => {
     const { GUARDRAILS } = await import("../src/lib/types.ts");
-    assert.equal(GUARDRAILS.MAX_REQUESTS_CEILING, 50000);
+    assert.equal(GUARDRAILS.MAX_REQUESTS_CEILING, 1000000);
     assert.equal(GUARDRAILS.MAX_DURATION_MINUTES_CEILING, 120);
-    assert.equal(GUARDRAILS.MAX_BATCH_SIZE_CEILING, 100);
+    assert.equal(GUARDRAILS.MAX_BATCH_SIZE_CEILING, 500);
     assert.equal(GUARDRAILS.MAX_LATENCY_HISTORY, 200);
     assert.equal(GUARDRAILS.DEFAULT_JOB_TTL_SECONDS, 86400);
   });

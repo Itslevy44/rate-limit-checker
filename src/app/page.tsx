@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { ConfigForm } from "@/components/ConfigForm";
 import { StatusDashboard } from "@/components/StatusDashboard";
+import { UserGuide } from "@/components/UserGuide";
 import {
   Gauge,
   History,
@@ -11,13 +12,14 @@ import {
   Zap,
   ExternalLink,
   Info,
+  BookOpen,
 } from "lucide-react";
 
 export default function Home() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [sharedSecret, setSharedSecret] = useState<string>("");
   const [recentJobs, setRecentJobs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<"config" | "dashboard">("config");
+  const [activeTab, setActiveTab] = useState<"config" | "dashboard" | "guide">("config");
 
   // Load shared secret and recent jobs from localStorage
   useEffect(() => {
@@ -131,51 +133,66 @@ export default function Home() {
                 Dashboard
               </button>
             )}
+
+            <button
+              onClick={() => setActiveTab("guide")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                activeTab === "guide"
+                  ? "bg-indigo-600 text-white shadow"
+                  : "bg-slate-800 text-slate-300 hover:text-white"
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Guide
+            </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8">
-        {/* Architecture Badges Info */}
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-400">
-          <div className="bg-slate-900/50 border border-slate-800/80 rounded-lg p-3 flex items-start gap-2.5">
-            <Server className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-slate-200">Stateless Batch Loop</strong>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Ticks fire via QStash self-rescheduling. Safe against Vercel execution timeouts.
-              </p>
+        {activeTab !== "guide" && (
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-400">
+            <div className="bg-slate-900/50 border border-slate-800/80 rounded-lg p-3 flex items-start gap-2.5">
+              <Server className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-slate-200">Stateless Batch Loop</strong>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Ticks fire via QStash self-rescheduling. Safe against Vercel execution timeouts.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="bg-slate-900/50 border border-slate-800/80 rounded-lg p-3 flex items-start gap-2.5">
-            <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-slate-200">Verified Stop Control</strong>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Halts pending QStash messages and rejects ticks immediately when status changes.
-              </p>
+            <div className="bg-slate-900/50 border border-slate-800/80 rounded-lg p-3 flex items-start gap-2.5">
+              <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-slate-200">Verified Stop Control</strong>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Halts pending QStash messages and rejects ticks immediately when status changes.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="bg-slate-900/50 border border-slate-800/80 rounded-lg p-3 flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-slate-200">Ceilings & Expiry</strong>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Server-enforced caps on total requests/duration, and 24h automatic key expiration.
-              </p>
+            <div className="bg-slate-900/50 border border-slate-800/80 rounded-lg p-3 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-slate-200">1M Cap & Expiry</strong>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Up to 1,000,000 requests, 500 req/tick batches, and 24h automatic key expiration.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* View Switch */}
-        {activeTab === "config" || !activeJobId ? (
+        {activeTab === "guide" ? (
+          <UserGuide onStartTest={() => setActiveTab("config")} />
+        ) : activeTab === "config" || !activeJobId ? (
           <ConfigForm
             onJobStarted={handleJobStarted}
             sharedSecret={sharedSecret}
             setSharedSecret={handleSecretChange}
+            onOpenGuide={() => setActiveTab("guide")}
           />
         ) : (
           <StatusDashboard

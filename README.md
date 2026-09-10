@@ -46,7 +46,8 @@ A Vercel-hosted tool to load-test your own endpoints and observe rate-limiting b
 
 ## Guardrails Built-in
 
-- [x] **Required Hard Ceilings**: `maxRequests` (max 50,000) and `maxDurationMinutes` (max 120m) are strictly required and capped server-side.
+- [x] **Required Hard Ceilings**: `maxRequests` (max 1,000,000 requests) and `batchSize` (up to 500 reqs/tick), with `maxDurationMinutes` (max 120m) strictly required and capped server-side.
+- [x] **Built-in Interactive User Guide**: Comprehensive 3-step walkthrough and tuning recommendations directly in the web app.
 - [x] **Pre-Execution Stop Check**: `/tick` verifies `status === "running"` before firing any batch requests.
 - [x] **QStash Webhook Signature Verification**: Uses `@upstash/qstash` `Receiver` to cryptographically verify incoming ticks.
 - [x] **Shared Secret Auth**: All API routes and frontend actions can be protected by `TOOL_SHARED_SECRET` via `x-tool-secret` or `Authorization: Bearer`.

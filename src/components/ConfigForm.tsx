@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, ShieldAlert, Sparkles, Play, Code, Clock, Zap } from "lucide-react";
+import { Plus, Trash2, ShieldAlert, Sparkles, Play, Code, Clock, Zap, BookOpen } from "lucide-react";
 import { GUARDRAILS } from "@/lib/types";
 
 interface HeaderItem {
@@ -14,9 +14,10 @@ interface ConfigFormProps {
   onJobStarted: (jobId: string) => void;
   sharedSecret: string;
   setSharedSecret: (secret: string) => void;
+  onOpenGuide?: () => void;
 }
 
-export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret }: ConfigFormProps) {
+export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpenGuide }: ConfigFormProps) {
   const [url, setUrl] = useState("");
   const [method, setMethod] = useState("GET");
   const [headers, setHeaders] = useState<HeaderItem[]>([]);
@@ -207,6 +208,15 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret }: Conf
           >
             Dummy Login POST
           </button>
+          {onOpenGuide && (
+            <button
+              type="button"
+              onClick={onOpenGuide}
+              className="px-2.5 py-1 text-xs font-medium rounded-md bg-indigo-900/40 text-indigo-300 border border-indigo-700/60 hover:bg-indigo-800/60 flex items-center gap-1 transition"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> User Guide
+            </button>
+          )}
         </div>
       </div>
 
