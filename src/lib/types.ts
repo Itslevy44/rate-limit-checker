@@ -5,6 +5,8 @@ export type JobTarget = {
   body?: string;
   autoCsrf?: boolean;
   csrfUrl?: string;
+  followRedirects?: boolean;
+  expectJson?: boolean;
 };
 
 export type JobStatus = "running" | "stopped" | "completed" | "failed";
@@ -51,6 +53,8 @@ export type JobSafeStatus = {
   minLatency: number | null;
   maxLatency: number | null;
   autoCsrf?: boolean;
+  followRedirects?: boolean;
+  expectJson?: boolean;
 };
 
 export type CreateJobPayload = {
@@ -64,6 +68,8 @@ export type CreateJobPayload = {
   maxDurationMinutes: number;
   autoCsrf?: boolean;
   csrfUrl?: string;
+  followRedirects?: boolean;
+  expectJson?: boolean;
 };
 
 // Hard ceilings and guardrails

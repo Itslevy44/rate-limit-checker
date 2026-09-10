@@ -52,6 +52,8 @@ export async function GET(
     minLatency,
     maxLatency,
     autoCsrf: job.target.autoCsrf,
+    followRedirects: job.target.followRedirects,
+    expectJson: job.target.expectJson,
   };
 
   return NextResponse.json(safeStatus);

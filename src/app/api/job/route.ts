@@ -135,6 +135,8 @@ export async function POST(req: NextRequest) {
       body: requestBody,
       autoCsrf: Boolean(body.autoCsrf),
       csrfUrl: body.csrfUrl ? String(body.csrfUrl).trim() : undefined,
+      followRedirects: Boolean(body.followRedirects),
+      expectJson: body.expectJson !== false,
     },
     batchSize,
     delayMs,

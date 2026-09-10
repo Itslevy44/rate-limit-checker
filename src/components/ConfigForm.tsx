@@ -28,12 +28,14 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
   const [maxDurationMinutes, setMaxDurationMinutes] = useState<number>(5);
   const [autoCsrf, setAutoCsrf] = useState<boolean>(false);
   const [csrfUrl, setCsrfUrl] = useState<string>("");
+  const [expectJson, setExpectJson] = useState<boolean>(true);
+  const [followRedirects, setFollowRedirects] = useState<boolean>(true);
 
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Preset loader
-  const loadPreset = (type: "mock" | "login" | "laravel" | "get") => {
+  const loadPreset = (type: "mock" | "api" | "web" | "get") => {
     setFormError(null);
     if (type === "mock") {
       const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
@@ -47,33 +49,35 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
       setMaxDurationMinutes(3);
       setAutoCsrf(false);
       setCsrfUrl("");
-    } else if (type === "laravel") {
-      setUrl("https://goafrica.site/dashboard/login");
+      setExpectJson(false);
+      setFollowRedirects(false);
+    } else if (type === "web") {
+      setUrl("https://example.com/login");
       setMethod("POST");
       setHeaders([
         { id: "h-1", key: "Content-Type", value: "application/x-www-form-urlencoded" },
-        { id: "h-2", key: "User-Agent", value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
       ]);
-      setBody("email=admin%40example.com&password=wrong_password_test");
+      setBody("email=user%40example.com&password=wrong_password_test");
       setBatchSize(5);
       setDelayMs(1000);
       setMaxRequests(50);
       setMaxDurationMinutes(5);
       setAutoCsrf(true);
       setCsrfUrl("");
-    } else if (type === "login") {
+      setExpectJson(true);
+      setFollowRedirects(true);
+    } else if (type === "api") {
       setUrl("https://api.example.com/v1/auth/login");
       setMethod("POST");
       setHeaders([
         { id: "h-1", key: "Content-Type", value: "application/json" },
         { id: "h-2", key: "Accept", value: "application/json" },
-        { id: "h-3", key: "User-Agent", value: "RateLimitTester/1.0" },
       ]);
       setBody(
         JSON.stringify(
           {
-            email: "test-user@example.com",
-            password: "dummy_password_sample",
+            email: "user@example.com",
+            password: "wrong_password_test",
           },
           null,
           2
@@ -85,6 +89,8 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
       setMaxDurationMinutes(5);
       setAutoCsrf(false);
       setCsrfUrl("");
+      setExpectJson(true);
+      setFollowRedirects(false);
     } else {
       setUrl("https://httpbin.org/get");
       setMethod("GET");
@@ -96,6 +102,8 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
       setMaxDurationMinutes(2);
       setAutoCsrf(false);
       setCsrfUrl("");
+      setExpectJson(false);
+      setFollowRedirects(false);
     }
   };
 
@@ -187,6 +195,8 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
           maxDurationMinutes: Number(maxDurationMinutes),
           autoCsrf,
           csrfUrl: csrfUrl.trim() || undefined,
+          expectJson,
+          followRedirects,
         }),
       });
 
@@ -228,17 +238,17 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
           </button>
           <button
             type="button"
-            onClick={() => loadPreset("laravel")}
+            onClick={() => loadPreset("web")}
             className="px-2.5 py-1 text-xs font-medium rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 hover:bg-emerald-900 transition flex items-center gap-1"
           >
-            <KeyRound className="w-3 h-3" /> Laravel Web Login (+CSRF)
+            <KeyRound className="w-3 h-3" /> Web Form (+CSRF)
           </button>
           <button
             type="button"
-            onClick={() => loadPreset("login")}
+            onClick={() => loadPreset("api")}
             className="px-2.5 py-1 text-xs font-medium rounded-md bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition"
           >
-            API JSON POST
+            API JSON Endpoint
           </button>
           {onOpenGuide && (
             <button
@@ -407,6 +417,51 @@ export function ConfigForm({ onJobStarted, sharedSecret, setSharedSecret, onOpen
               />
             </div>
           )}
+        </div>
+
+        {/* 302 Detection Options */}
+        <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+            Rate-Limit Detection Mode (for 302 redirect targets)
+          </p>
+
+          {/* expectJson toggle */}
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="expectJson"
+              checked={expectJson}
+              onChange={(e) => setExpectJson(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+            />
+            <label htmlFor="expectJson" className="cursor-pointer">
+              <span className="block text-xs font-bold text-slate-200">
+                Send AJAX Headers — get clean HTTP 429 instead of 302 redirects
+              </span>
+              <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                Injects <code>X-Requested-With: XMLHttpRequest</code> and <code>Accept: application/json</code>. Laravel, Rails, Django and most frameworks will respond with a real <code>429</code> JSON body instead of a redirect when the rate limiter fires. Recommended for web-form targets.
+              </span>
+            </label>
+          </div>
+
+          {/* followRedirects toggle */}
+          <div className="flex items-start gap-3 pt-2 border-t border-slate-800/60">
+            <input
+              type="checkbox"
+              id="followRedirects"
+              checked={followRedirects}
+              onChange={(e) => setFollowRedirects(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+            />
+            <label htmlFor="followRedirects" className="cursor-pointer">
+              <span className="block text-xs font-bold text-slate-200">
+                Follow 302 Redirects — inspect flashed session messages
+              </span>
+              <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                After a redirect, re-requests the destination with the session cookie and scans the HTML body for throttle phrases like <em>"Too many login attempts"</em>. Marks those responses as rate-limited even though the status code was 302.
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* API Route vs Web Form Tip */}

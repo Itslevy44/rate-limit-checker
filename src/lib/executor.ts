@@ -4,6 +4,7 @@ export type BatchResultItem = {
   status: string; // e.g. "200", "429", "ERR"
   statusCode: number | null;
   latencyMs: number;
+  isRateLimited?: boolean;
   error?: string;
 };
 
@@ -18,9 +19,8 @@ type CsrfSession = {
 };
 
 /**
- * Fetches the target page to extract:
- * 1. CSRF token (from HTML <input name="_token">, <meta name="csrf-token">, or XSRF-TOKEN cookie)
- * 2. Session cookies (from Set-Cookie headers)
+ * Universal CSRF and session cookie extractor.
+ * Works across Laravel, Django, Rails, Spring, Express, and others.
  */
 async function fetchCsrfSession(
   url: string,
@@ -51,7 +51,9 @@ async function fetchCsrfSession(
     const tokenMatch =
       html.match(/name=["']_token["']\s+value=["']([^"']+)["']/i) ||
       html.match(/value=["']([^"']+)["']\s+name=["']_token["']/i) ||
-      html.match(/name=["']csrf-token["']\s+content=["']([^"']+)["']/i);
+      html.match(/name=["']csrf-token["']\s+content=["']([^"']+)["']/i) ||
+      html.match(/name=["']csrfmiddlewaretoken["']\s+value=["']([^"']+)["']/i) || // Django
+      html.match(/name=["']authenticity_token["']\s+value=["']([^"']+)["']/i); // Rails
 
     let token = tokenMatch ? tokenMatch[1] : null;
 
@@ -78,6 +80,10 @@ async function fetchCsrfSession(
 
 /**
  * Fires a single request to the target and measures roundtrip latency.
+ * Implements:
+ * - Option 2: Automatic X-Requested-With / Expect JSON headers
+ * - Option 3: Rate-limit headers check on all status codes (including 302/200)
+ * - Option 1: Redirect session inspection for flashed throttle error messages
  */
 async function executeSingleRequest(
   target: JobTarget,
@@ -94,6 +100,16 @@ async function executeSingleRequest(
       ...(target.headers || {}),
       ...(overrideHeaders || {}),
     };
+
+    // Option 2: Send AJAX headers so framework exception handlers return a 429 JSON response instead of redirecting
+    if (target.expectJson !== false) {
+      if (!Object.keys(headers).some((k) => k.toLowerCase() === "x-requested-with")) {
+        headers["X-Requested-With"] = "XMLHttpRequest";
+      }
+      if (!Object.keys(headers).some((k) => k.toLowerCase() === "accept")) {
+        headers["Accept"] = "application/json, text/plain, */*";
+      }
+    }
 
     const finalBody = overrideBody !== undefined ? overrideBody : target.body;
 
@@ -114,10 +130,77 @@ async function executeSingleRequest(
         : finalBody,
       signal: controller.signal,
       cache: "no-store",
-      redirect: "manual", // Prevent automatic redirect so 302/301 responses are measured directly
+      redirect: "manual", // Prevent automatic redirect so response headers and locations can be inspected
     });
 
     const latencyMs = Math.round(performance.now() - start);
+
+    // Option 3: Check rate-limit headers on the response (even if status is 302 or 200)
+    const retryAfter = response.headers.get("retry-after");
+    const remaining =
+      response.headers.get("x-ratelimit-remaining") ||
+      response.headers.get("ratelimit-remaining");
+    const isHeaderThrottled = (retryAfter !== null && retryAfter !== "") || remaining === "0";
+
+    // Direct 429 or throttled by response headers
+    if (response.status === 429 || isHeaderThrottled) {
+      return {
+        status: "429",
+        statusCode: 429,
+        latencyMs,
+        isRateLimited: true,
+        error: isHeaderThrottled && response.status !== 429 ? `Throttled via headers (HTTP ${response.status})` : undefined,
+      };
+    }
+
+    // Option 1: Follow redirect and check flashed session error message
+    if ([301, 302, 303, 307, 308].includes(response.status) && target.followRedirects) {
+      const location = response.headers.get("location");
+      if (location) {
+        try {
+          const redirectUrl = new URL(location, target.url).toString();
+          const redirectCookies: string[] = (response.headers as any).getSetCookie
+            ? (response.headers as any).getSetCookie()
+            : [response.headers.get("set-cookie")].filter(Boolean);
+          const redirectCookieHeader = redirectCookies.map((c: string) => c.split(";")[0].trim()).join("; ");
+          const mergedCookies = [headers["Cookie"], redirectCookieHeader].filter(Boolean).join("; ");
+
+          const followRes = await fetch(redirectUrl, {
+            method: "GET",
+            headers: {
+              "User-Agent": headers["User-Agent"] || "RateLimitTester/1.0",
+              ...(mergedCookies ? { Cookie: mergedCookies } : {}),
+            },
+            cache: "no-store",
+          });
+
+          const followHtml = await followRes.text();
+          const throttlePatterns = [
+            /too many (login )?attempts/i,
+            /please try again in \d+/i,
+            /rate limit exceeded/i,
+            /too many requests/i,
+            /throttle/i,
+            /temporarily locked/i,
+            /account locked/i,
+            /slow down/i,
+          ];
+
+          if (throttlePatterns.some((p) => p.test(followHtml))) {
+            return {
+              status: "429",
+              statusCode: 429,
+              latencyMs,
+              isRateLimited: true,
+              error: "Throttled (flashed error message detected in redirect session)",
+            };
+          }
+        } catch (err: any) {
+          console.warn("[Redirect Inspector] Could not inspect redirect target:", err.message);
+        }
+      }
+    }
+
     return {
       status: String(response.status),
       statusCode: response.status,
@@ -169,6 +252,7 @@ export async function executeBatch(
       if (session.token) {
         dynamicHeaders["X-CSRF-TOKEN"] = session.token;
         dynamicHeaders["X-XSRF-TOKEN"] = session.token;
+        dynamicHeaders["X-CSRFToken"] = session.token; // Django header
 
         // Inject token into body
         if (target.body) {
@@ -181,7 +265,7 @@ export async function executeBatch(
                 dynamicBody = JSON.stringify(parsed);
               }
             } catch {}
-          } else if (!trimmed.includes("_token=")) {
+          } else if (!trimmed.includes("_token=") && !trimmed.includes("csrfmiddlewaretoken=")) {
             dynamicBody = `${trimmed}${trimmed ? "&" : ""}_token=${encodeURIComponent(session.token)}`;
           }
         } else {
@@ -198,7 +282,7 @@ export async function executeBatch(
   }
 
   const results = await Promise.all(promises);
-  const has429 = results.some((r) => r.statusCode === 429);
+  const has429 = results.some((r) => r.statusCode === 429 || r.isRateLimited);
 
   return {
     items: results,
