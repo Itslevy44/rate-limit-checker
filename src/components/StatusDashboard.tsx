@@ -413,6 +413,101 @@ export function StatusDashboard({ jobId, onReset, sharedSecret }: StatusDashboar
           height={110}
           color={job.first429At !== null ? "#f59e0b" : "#6366f1"}
         />
+
+        {/* Graph Interpretation */}
+        {job.latencies.length >= 5 && (() => {
+          const lats = job.latencies;
+          const n = lats.length;
+          const avg = Math.round(lats.reduce((a, b) => a + b, 0) / n);
+          const mn = Math.min(...lats);
+          const mx = Math.max(...lats);
+          const range = mx - mn;
+
+          // Trend: compare first 20% average vs last 20% average
+          const slice = Math.max(1, Math.floor(n * 0.2));
+          const earlyAvg = Math.round(lats.slice(0, slice).reduce((a, b) => a + b, 0) / slice);
+          const lateAvg = Math.round(lats.slice(-slice).reduce((a, b) => a + b, 0) / slice);
+          const trendDelta = lateAvg - earlyAvg;
+          const trendPct = earlyAvg > 0 ? Math.round((trendDelta / earlyAvg) * 100) : 0;
+
+          // Spike detection: values > 2× average
+          const spikes = lats.filter(v => v > avg * 2);
+          const spikeCount = spikes.length;
+
+          // Plateau detection: std-dev < 10% of avg in last half
+          const lastHalf = lats.slice(Math.floor(n / 2));
+          const lastAvg = lastHalf.reduce((a, b) => a + b, 0) / lastHalf.length;
+          const lastStdDev = Math.sqrt(lastHalf.reduce((a, b) => a + Math.pow(b - lastAvg, 2), 0) / lastHalf.length);
+          const isStable = lastStdDev / (lastAvg || 1) < 0.1;
+
+          // Cloudflare flat-high signature: all values within ±15% of a high avg (>800ms)
+          const allHigh = mn > 800 && range / (avg || 1) < 0.3;
+
+          // Rate-limit cliff: late avg much higher than early avg AND 429s exist
+          const hasCliff = trendPct > 50 && job.first429At !== null;
+
+          // Warm-up ramp: steady increase throughout, no 429, no spikes
+          const isRamp = trendPct > 30 && job.first429At === null && spikeCount < 3 && !allHigh;
+
+          // Build interpretation bullets
+          const bullets: { color: string; text: string }[] = [];
+
+          if (allHigh) {
+            bullets.push({ color: "text-orange-300", text: `🛡 All latencies are uniformly high (${mn}–${mx}ms, avg ${avg}ms) with very little variation. This is a Cloudflare challenge-page signature — the server is returning a cached WAF block page instantly rather than running your app code. The "latency" you're seeing is mostly Cloudflare's edge response time, not your application.` });
+          } else {
+            if (trendDelta > 50 && trendPct > 15) {
+              bullets.push({ color: "text-amber-300", text: `📈 Rising trend: latency grew from ~${earlyAvg}ms (early) to ~${lateAvg}ms (late) — a ${trendPct}% increase. This suggests the server is slowing down under load, warming up a connection pool, or that Cloudflare / a CDN is progressively throttling the request cadence.` });
+            } else if (trendDelta < -50 && Math.abs(trendPct) > 15) {
+              bullets.push({ color: "text-emerald-300", text: `📉 Falling trend: latency dropped from ~${earlyAvg}ms (early) to ~${lateAvg}ms (late) — a ${Math.abs(trendPct)}% decrease. The server likely warmed up its connection pool, hit a cache, or a cold-start penalty resolved after the first few requests.` });
+            } else {
+              bullets.push({ color: "text-slate-300", text: `➡ Stable trend: early avg ~${earlyAvg}ms vs late avg ~${lateAvg}ms (${trendPct > 0 ? "+" : ""}${trendPct}%). Latency is broadly consistent across the test run, meaning the server handled load without significant slow-down.` });
+            }
+
+            if (hasCliff) {
+              bullets.push({ color: "text-amber-300", text: `⚡ Rate-limit cliff: latency jumped sharply around the time the first 429 appeared (request #${job.first429At}). After the rate limiter fires, the server processes requests faster (returning cached 429 responses) or slower (additional throttle overhead), which explains the shape change at that point in the graph.` });
+            }
+
+            if (isRamp && !hasCliff) {
+              bullets.push({ color: "text-sky-300", text: `🔺 Gradual ramp: latency climbs steadily without any 429s. Possible causes: server CPU/memory pressure accumulating, a growing queue, or Cloudflare progressively increasing its bot score and introducing artificial delays before eventually blocking.` });
+            }
+
+            if (spikeCount > 0) {
+              bullets.push({ color: "text-rose-300", text: `⚡ ${spikeCount} spike${spikeCount > 1 ? "s" : ""} detected (values > 2× avg). Spikes are typically caused by: a GC pause on the server, a cold database connection being re-established, a QStash delivery delay between ticks, or a network jitter event. They don't indicate rate limiting on their own.` });
+            }
+
+            if (isStable && !hasCliff) {
+              bullets.push({ color: "text-slate-400", text: `✅ The second half of the graph is stable (low variance). The server reached a steady state — no progressive degradation, no resource leak visible in the latency profile.` });
+            }
+
+            if (range > 500) {
+              bullets.push({ color: "text-slate-400", text: `📊 High latency range: ${mn}ms min to ${mx}ms max (${range}ms spread). Wide ranges indicate inconsistent server response times — possible causes: varying server load, intermittent caching, or connection reuse differences between batch ticks.` });
+            }
+          }
+
+          const panelColor = allHigh
+            ? "border-orange-800 bg-orange-950/20"
+            : hasCliff
+            ? "border-amber-800 bg-amber-950/20"
+            : "border-slate-800 bg-slate-950/30";
+
+          return (
+            <div className={`mt-4 rounded-lg border ${panelColor} p-4`}>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5" /> Graph Interpretation
+              </p>
+              <ul className="space-y-2.5">
+                {bullets.map((b, i) => (
+                  <li key={i} className={`text-xs leading-relaxed ${b.color}`}>
+                    {b.text}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-slate-600 mt-3 italic">
+                Based on {n} latency samples · avg {avg}ms · min {mn}ms · max {mx}ms
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Status Code Distribution Breakdown */}
